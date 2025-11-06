@@ -54,6 +54,8 @@ services:
     restart: always
     networks:
       - ${DOCKER_NETWORK:-splice_validator}
+    ports:
+      - 5002:5002
 
   chown-domain-upgrade-dump:
     image: busybox:1.37.0
@@ -143,7 +145,7 @@ services:
       - SPLICE_APP_UI_AUTH_AUDIENCE=${VALIDATOR_AUTH_AUDIENCE}
       - SPLICE_APP_UI_AUTH_CLIENT_ID=${ANS_UI_CLIENT_ID}
       - SPLICE_APP_UI_AUTH_URL=${AUTH_URL}
-      - SPLICE_APP_WALLET_REDIRECT=http://wallet.localhost
+      - SPLICE_APP_WALLET_REDIRECT=https://wallet-mainnet.modulo.finance
       - SPLICE_APP_UI_HTTP_URL=false
       - SPLICE_APP_UI_NETWORK_NAME=${SPLICE_APP_UI_NETWORK_NAME}
       - SPLICE_APP_UI_NETWORK_FAVICON_URL=${SPLICE_APP_UI_NETWORK_FAVICON_URL}
@@ -161,6 +163,7 @@ services:
       - ./nginx:/etc/nginx/includes
     ports:
       - 80:80
+      - 443:443
     depends_on:
       - ans-web-ui
       - wallet-web-ui

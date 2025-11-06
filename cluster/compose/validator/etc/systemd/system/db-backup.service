@@ -1,0 +1,9 @@
+[Unit]
+Description=Database Backup Service
+
+[Service]
+Type=oneshot
+User=debian
+Group=debian
+WorkingDirectory=/home/debian/backup
+ExecStart=/home/debian/backup/db-backup.sh

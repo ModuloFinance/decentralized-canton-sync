@@ -1,0 +1,9 @@
+[Unit]
+Description=Canton transfer
+
+[Service]
+Type=oneshot
+User=debian
+Group=debian
+WorkingDirectory=/home/debian/Canton-Payout-CLI
+ExecStart=/home/debian/Canton-Payout-CLI/dist/cc.js transfer dfns1::1220d7337e330cebf65ec4a3c1dc1c67d1cf9875a4eec11f411a645aa86d07a8f3fa

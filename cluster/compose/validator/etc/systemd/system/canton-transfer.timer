@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Canton transfer every hour
+
+[Timer]
+Unit=canton-transfer.service
+OnCalendar=*-*-* 00/1:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

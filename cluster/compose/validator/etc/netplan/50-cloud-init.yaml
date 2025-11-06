@@ -1,0 +1,21 @@
+network:
+  version: 2
+  ethernets:
+    eno1np0:
+      match:
+        macaddress: "a8:a1:59:c0:a3:f9"
+      addresses:
+      - "15.235.72.248/32"
+      - "2607:5300:203:af7d::/64"
+      dhcp4: true
+      dhcp4-overrides:
+        use-routes: false
+      accept-ra: false
+      set-name: "eno1np0"
+      routes:
+      - on-link: true
+        to: "default"
+        via: "2607:5300:203:afff:ff:ff:ff:ff"
+      - to: default
+        via: 15.235.87.254
+        from: 15.235.72.248

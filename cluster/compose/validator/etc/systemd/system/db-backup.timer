@@ -1,0 +1,10 @@
+[Unit]
+Description=Run database backup every 2 hours
+
+[Timer]
+Unit=db-backup.service
+OnCalendar=*-*-* 00/2:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+{
+  "Rules": [
+    {
+      "ID": "prune-backups-30d",
+      "Status": "Enabled",
+      "Filter": { },
+      "Expiration": {
+        "Days": 1
+      }
+    }
+  ]
+}

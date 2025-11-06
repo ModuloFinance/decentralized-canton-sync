@@ -1,0 +1,16 @@
+[Unit]
+Description=Validator stack (Docker Compose)
+Requires=docker.service
+After=docker.service network.target
+
+[Service]
+Type=oneshot
+#User=debian
+EnvironmentFile=/etc/default/validator
+WorkingDirectory=/home/debian/splice-node/docker-compose/validator
+ExecStart=/home/debian/splice-node/docker-compose/validator/start-with-fix.sh -s $SPONSOR_SV_URL -o $ONBOARDING_SECRET -p $PARITY_HINT -m $MIGRATION_ID -w -a
+ExecStop=/home/debian/splice-node/docker-compose/validator/stop.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
