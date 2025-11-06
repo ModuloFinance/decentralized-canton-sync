@@ -22,6 +22,7 @@ import { EffectiveDateField } from '../form-components/EffectiveDateField';
 import { ProposalSummary } from '../governance/ProposalSummary';
 import { ProposalSubmissionError } from '../form-components/ProposalSubmissionError';
 import { useProposalMutation } from '../../hooks/useProposalMutation';
+import { THRESHOLD_DEADLINE_SUBTITLE } from '../../utils/constants';
 
 interface ExtraFormFields {
   sv: string;
@@ -130,8 +131,8 @@ export const OffboardSvForm: React.FC = _ => {
             >
               {field => (
                 <field.DateField
-                  title="Vote Proposal Expiration"
-                  description="This is the last day voters can vote on this proposal"
+                  title="Threshold Deadline"
+                  description={THRESHOLD_DEADLINE_SUBTITLE}
                   id="offboard-sv-expiry-date"
                 />
               )}
@@ -160,7 +161,7 @@ export const OffboardSvForm: React.FC = _ => {
                 onChange: ({ value }) => validateSummary(value),
               }}
             >
-              {field => <field.TextArea title="Proposal Summary" id="offboard-sv-summary" />}
+              {field => <field.ProposalSummaryField id="offboard-sv-summary" />}
             </form.AppField>
 
             <form.AppField

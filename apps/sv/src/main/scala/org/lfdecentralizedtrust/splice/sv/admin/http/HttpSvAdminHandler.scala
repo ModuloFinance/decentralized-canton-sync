@@ -3,6 +3,7 @@
 
 package org.lfdecentralizedtrust.splice.sv.admin.http
 
+import better.files.File.apply
 import cats.implicits.catsSyntaxApplicativeId
 import cats.syntax.either.*
 import org.lfdecentralizedtrust.splice.admin.http.HttpErrorHandler
@@ -35,7 +36,7 @@ import org.lfdecentralizedtrust.splice.sv.migration.{
 }
 import org.lfdecentralizedtrust.splice.sv.store.{SvDsoStore, SvSvStore}
 import org.lfdecentralizedtrust.splice.sv.util.SvUtil.generateRandomOnboardingSecret
-import org.lfdecentralizedtrust.splice.sv.util.ValidatorOnboardingSecret
+import org.lfdecentralizedtrust.splice.sv.util.Secrets
 import org.lfdecentralizedtrust.splice.sv.{LocalSynchronizerNode, SvApp}
 
 import java.util.Optional
@@ -57,7 +58,6 @@ import com.digitalasset.canton.logging.{ErrorLoggingContext, NamedLoggerFactory}
 import com.digitalasset.canton.time.Clock
 import com.digitalasset.canton.tracing.TraceContext
 import com.digitalasset.canton.util.ErrorUtil
-import io.circe.syntax.EncoderOps
 import io.grpc.Status
 import io.opentelemetry.api.trace.Tracer
 import org.apache.pekko.stream.Materializer
@@ -156,17 +156,19 @@ class HttpSvAdminHandler(
         validatorOnboardings <- svStore.listValidatorOnboardings()
       } yield {
         definitions.ListOngoingValidatorOnboardingsResponse(
-          validatorOnboardings
-            .map(onboarding =>
-              definitions.ValidatorOnboarding(
-                ValidatorOnboardingSecret(
-                  svStore.key.svParty,
-                  onboarding.payload.candidateSecret,
-                ).toApiResponse,
-                onboarding.toHttp,
+          validatorOnboardings.map { onboarding =>
+            val secret = Secrets
+              .decodeValidatorOnboardingSecret(
+                onboarding.payload.candidateSecret,
+                dsoStore.key.svParty,
               )
+
+            definitions.ValidatorOnboarding(
+              secret.toApiResponse,
+              onboarding.toHttp,
+              secret.partyHint,
             )
-            .toVector
+          }.toVector
         )
       }
     }
@@ -189,7 +191,7 @@ class HttpSvAdminHandler(
   )(tuser: TracedUser): Future[v0.SvAdminResource.PrepareValidatorOnboardingResponse] = {
     implicit val TracedUser(_, traceContext) = tuser
     withSpan(s"$workflowId.prepareValidatorOnboarding") { _ => _ =>
-      val secret = generateRandomOnboardingSecret(svStore.key.svParty)
+      val secret = generateRandomOnboardingSecret(svStore.key.svParty, body.partyHint)
       val expiresIn = NonNegativeFiniteDuration.ofSeconds(body.expiresIn.toLong)
       dsoStore
         .getDsoRules()
@@ -511,7 +513,9 @@ class HttpSvAdminHandler(
                     domainDataSnapshotGenerator,
                   )
                   .map { response =>
-                    v0.SvAdminResource.GetDomainMigrationDumpResponse.OK(response.toHttp)
+                    // DR endpoint does not support separate output files so set outputDirectory = None
+                    v0.SvAdminResource.GetDomainMigrationDumpResponse
+                      .OK(response.toHttp(outputDirectory = None))
                   }
               case None =>
                 Future.failed(
@@ -553,7 +557,9 @@ class HttpSvAdminHandler(
           force.getOrElse(false),
         )
         .map { response =>
-          val responseHttp = response.toHttp
+          // No output directory for HTTP: Note that this means that it breaks on
+          // large outputs.
+          val responseHttp = response.toHttp(outputDirectory = None)
           SvAdminResource.GetDomainDataSnapshotResponse.OK(
             definitions
               .GetDomainDataSnapshotResponse(
@@ -633,9 +639,13 @@ class HttpSvAdminHandler(
         case Some(synchronizerNode) =>
           optDomainMigrationDumpConfig match {
             case Some(dumpPath) =>
-              for {
-                dump <- DomainMigrationDump
-                  .getDomainMigrationDump(
+              val exportAt = request.timestamp.map(Instant.parse)
+              val dumpRequest = exportAt match {
+                case Some(at) =>
+                  logger.info(
+                    s"Triggering synchronizer migration dump for possibly unpaused synchronizer at $at"
+                  )
+                  DomainMigrationDump.getDomainMigrationDumpUnsafe(
                     config.domains.global.alias,
                     svStoreWithIngestion.connection(SpliceLedgerConnectionPriority.Low),
                     participantAdminConnection,
@@ -644,11 +654,39 @@ class HttpSvAdminHandler(
                     dsoStore,
                     request.migrationId,
                     domainDataSnapshotGenerator,
+                    at,
                   )
+                case None =>
+                  logger.info("Triggering synchronizer migration dump for expected synchronizer")
+                  DomainMigrationDump
+                    .getDomainMigrationDump(
+                      config.domains.global.alias,
+                      svStoreWithIngestion.connection(SpliceLedgerConnectionPriority.Low),
+                      participantAdminConnection,
+                      synchronizerNode,
+                      loggerFactory,
+                      dsoStore,
+                      request.migrationId,
+                      domainDataSnapshotGenerator,
+                    )
+              }
+              for {
+                dump <- dumpRequest
               } yield {
+                import io.circe.syntax.*
+                val pathForTheFiles = exportAt.fold(dumpPath.getParent)(at =>
+                  dumpPath.getParent
+                    .createChild(
+                      s"export_at_${at.toEpochMilli}",
+                      asDirectory = true,
+                      createParents = true,
+                    )
+                    .path
+                )
+                logger.info(s"Writing dump at $pathForTheFiles")
                 val path = BackupDump.writeToPath(
-                  dumpPath,
-                  dump.asJson.noSpaces,
+                  (pathForTheFiles / dumpPath.name).path,
+                  dump.toHttp(outputDirectory = Some(pathForTheFiles.toString)).asJson.noSpaces,
                 )
                 logger.info(s"Wrote domain migration dump at path $path")
                 SvAdminResource.TriggerDomainMigrationDumpResponseOK

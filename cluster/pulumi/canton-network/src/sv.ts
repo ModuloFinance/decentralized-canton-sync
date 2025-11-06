@@ -15,20 +15,19 @@ import {
   CnInput,
   daContactPoint,
   DecentralizedSynchronizerMigrationConfig,
-  DEFAULT_AUDIENCE,
   ExactNamespace,
   exactNamespace,
   failOnAppVersionMismatch,
   fetchAndInstallParticipantBootstrapDump,
   getAdditionalJvmOptions,
+  getSvAppApiAudience,
   imagePullSecret,
   initialPackageConfigJson,
   initialSynchronizerFeesConfig,
-  installAuth0Secret,
-  installAuth0UISecret,
   installBootstrapDataBucketSecret,
   InstalledHelmChart,
   installSpliceHelmChart,
+  installSvAppSecrets,
   installValidatorOnboardingSecret,
   networkWideConfig,
   participantBootstrapDumpSecretName,
@@ -41,6 +40,7 @@ import {
   validatorOnboardingSecretName,
 } from '@lfdecentralizedtrust/splice-pulumi-common';
 import {
+  approvedSvIdentities,
   CantonBftSynchronizerNode,
   CometbftSynchronizerNode,
   DecentralizedSynchronizerNode,
@@ -49,10 +49,7 @@ import {
   SvParticipant,
 } from '@lfdecentralizedtrust/splice-pulumi-common-sv';
 import { svsConfig, SvConfig } from '@lfdecentralizedtrust/splice-pulumi-common-sv/src/config';
-import {
-  installValidatorApp,
-  installValidatorSecrets,
-} from '@lfdecentralizedtrust/splice-pulumi-common-validator/src/validator';
+import { installValidatorApp } from '@lfdecentralizedtrust/splice-pulumi-common-validator/src/validator';
 import { spliceConfig } from '@lfdecentralizedtrust/splice-pulumi-common/src/config/config';
 import { initialAmuletPrice } from '@lfdecentralizedtrust/splice-pulumi-common/src/initialAmuletPrice';
 import { Postgres } from '@lfdecentralizedtrust/splice-pulumi-common/src/postgres';
@@ -131,13 +128,12 @@ export async function installSvNode(
   const loopback = installSvLoopback(xns);
   const imagePullDeps = imagePullSecret(xns);
 
-  const auth0BackendSecrets: CnInput<pulumi.Resource>[] = [
-    await installAuth0Secret(baseConfig.auth0Client, xns, 'sv', baseConfig.auth0SvAppName),
-  ];
-
-  const auth0UISecrets: pulumi.Resource[] = [
-    await installAuth0UISecret(baseConfig.auth0Client, xns, 'sv', baseConfig.nodeName),
-  ];
+  const auth0Secrets: CnInput<pulumi.Resource>[] = await installSvAppSecrets(
+    xns,
+    baseConfig.auth0Client,
+    baseConfig.auth0SvAppName,
+    baseConfig.nodeName
+  );
 
   const periodicBackupConfig: BackupConfig | undefined = baseConfig.periodicBackupConfig
     ? {
@@ -173,8 +169,7 @@ export async function installSvNode(
     ? await fetchAndInstallParticipantBootstrapDump(xns, config.bootstrappingDumpConfig)
     : undefined;
 
-  const dependsOn: CnInput<pulumi.Resource>[] = auth0BackendSecrets
-    .concat(auth0UISecrets)
+  const dependsOn: CnInput<pulumi.Resource>[] = auth0Secrets
     .concat(
       config.onboarding.type == 'join-with-key'
         ? installSvKeySecret(xns, config.onboarding.keys)
@@ -206,15 +201,31 @@ export async function installSvNode(
 
   const defaultPostgres = config.splitPostgresInstances
     ? undefined
-    : postgres.installPostgres(xns, 'postgres', 'postgres', activeVersion, false, {
-        logicalDecoding: !!baseConfig.scanBigQuery,
-      });
+    : postgres.installPostgres(
+        xns,
+        'postgres',
+        'postgres',
+        activeVersion,
+        spliceConfig.pulumiProjectConfig.cloudSql,
+        false,
+        {
+          logicalDecoding: !!baseConfig.scanBigQuery,
+        }
+      );
 
   const appsPostgres =
     defaultPostgres ||
-    postgres.installPostgres(xns, `cn-apps-pg`, `cn-apps-pg`, activeVersion, true, {
-      logicalDecoding: !!baseConfig.scanBigQuery,
-    });
+    postgres.installPostgres(
+      xns,
+      `cn-apps-pg`,
+      `cn-apps-pg`,
+      activeVersion,
+      spliceConfig.pulumiProjectConfig.cloudSql,
+      true,
+      {
+        logicalDecoding: !!baseConfig.scanBigQuery,
+      }
+    );
 
   const canton = buildCrossStackCantonDependencies(
     decentralizedSynchronizerUpgradeConfig,
@@ -331,12 +342,6 @@ async function installValidator(
   svApp: Resource,
   scan: Resource
 ) {
-  const validatorSecrets = await installValidatorSecrets({
-    xns,
-    auth0Client: svConfig.auth0Client,
-    auth0AppName: svConfig.auth0ValidatorAppName,
-  });
-
   const validatorDbName = `validator_${sanitizedForPostgres(svConfig.nodeName)}`;
   const decentralizedSynchronizerUrl = `https://sequencer-${decentralizedSynchronizerMigrationConfig.active.id}.sv-2.${CLUSTER_HOSTNAME}`;
 
@@ -348,7 +353,7 @@ async function installValidator(
     migration: {
       id: decentralizedSynchronizerMigrationConfig.active.id,
     },
-    validatorWalletUsers: svUserIds(validatorSecrets.auth0Client.getCfg()).apply(ids =>
+    validatorWalletUsers: svUserIds(svConfig.auth0Client.getCfg()).apply(ids =>
       ids.concat(svConfig.validatorWalletUser ? [svConfig.validatorWalletUser] : [])
     ),
     dependencies: sv.participant.asDependencies,
@@ -369,7 +374,8 @@ async function installValidator(
     participantAddress: sv.participant.internalClusterAddress,
     decentralizedSynchronizerUrl: bftSequencerConnection ? undefined : decentralizedSynchronizerUrl,
     scanAddress: internalScanUrl(svConfig),
-    secrets: validatorSecrets,
+    auth0Client: svConfig.auth0Client,
+    auth0ValidatorAppName: svConfig.auth0ValidatorAppName,
     sweep: svConfig.sweep,
     nodeIdentifier: svConfig.onboardingName,
     logLevel: svConfig.logging?.appsLogLevel,
@@ -386,6 +392,7 @@ async function installValidator(
       ...(svConfig.validatorApp?.additionalEnvVars || []),
     ],
     additionalJvmOptions: svConfig.validatorApp?.additionalJvmOptions || '',
+    resources: svConfig.validatorApp?.resources,
   });
 
   return validator;
@@ -489,7 +496,7 @@ function installSvApp(
       },
     })),
     isDevNet: config.isDevNet,
-    approvedSvIdentities: config.approvedSvIdentities,
+    approvedSvIdentities: approvedSvIdentities(),
     persistence: persistenceConfig(postgres, svDbName),
     identitiesExport: config.identitiesBackupLocation,
     participantIdentitiesDumpImport: config.bootstrappingDumpConfig
@@ -504,7 +511,7 @@ function installSvApp(
     onboardingPollingInterval: config.onboardingPollingInterval,
     enablePostgresMetrics: true,
     auth: {
-      audience: config.auth0Client.getCfg().appToApiAudience['sv'] || DEFAULT_AUDIENCE,
+      audience: getSvAppApiAudience(config.auth0Client.getCfg()),
       jwksUrl: `https://${config.auth0Client.getCfg().auth0Domain}/.well-known/jwks.json`,
     },
     contactPoint: daContactPoint,
@@ -515,6 +522,7 @@ function installSvApp(
     maxVettingDelay: networkWideConfig?.maxVettingDelay,
     logLevel: config.logging?.appsLogLevel,
     additionalEnvVars,
+    resources: config.svApp?.resources,
   } as ChartValues;
 
   if (config.onboarding.type == 'join-with-key') {
@@ -585,6 +593,7 @@ function installScan(
     enablePostgresMetrics: true,
     logLevel: config.logging?.appsLogLevel,
     additionalEnvVars: config.scanApp?.additionalEnvVars || [],
+    resources: config.scanApp?.resources,
   };
 
   if (svsConfig?.scan?.externalRateLimits) {

@@ -112,14 +112,6 @@
   },
   {
     "custom": true,
-    "id": "projects/test-project/global/networks/default",
-    "inputs": {},
-    "name": "default",
-    "provider": "",
-    "type": "gcp:compute/network:Network"
-  },
-  {
-    "custom": true,
     "id": "",
     "inputs": {
       "apiVersion": "v1",
@@ -991,7 +983,7 @@
         }
       }
     },
-    "name": "splice-auth0-ui-secret-sv-1-sv-1",
+    "name": "splice-auth0-ui-secret-sv-1-sv",
     "provider": "",
     "type": "kubernetes:core/v1:Secret"
   },
@@ -1057,7 +1049,7 @@
         }
       }
     },
-    "name": "splice-auth0-ui-secret-sv-da-1-sv-da-1",
+    "name": "splice-auth0-ui-secret-sv-da-1-sv",
     "provider": "",
     "type": "kubernetes:core/v1:Secret"
   },
@@ -1582,6 +1574,15 @@
           "secretName": "cn-apps-pg-secrets",
           "user": "cnadmin"
         },
+        "resources": {
+          "limits": {
+            "memory": "2048Mi"
+          },
+          "requests": {
+            "cpu": "0.5",
+            "memory": "1536Mi"
+          }
+        },
         "sequencerAddress": "global-domain-3-sequencer",
         "spliceInstanceNames": {
           "amuletName": "Amulet",
@@ -1646,7 +1647,7 @@
         "approvedSvIdentities": [
           {
             "name": "Digital-Asset-2",
-            "publicKey": "PUBKEY_0==",
+            "publicKey": "sv1-id-public-key",
             "rewardWeightBps": 100000
           },
           {
@@ -1673,6 +1674,11 @@
             "name": "Digital-Asset-1",
             "publicKey": "svda1-mock-id-public-key",
             "rewardWeightBps": 150000
+          },
+          {
+            "name": "DA-Helm-Test-Node",
+            "publicKey": "sv-id-public-key",
+            "rewardWeightBps": 10000
           }
         ],
         "auth": {
@@ -1772,6 +1778,15 @@
           "secretName": "cn-apps-pg-secrets",
           "user": "cnadmin"
         },
+        "resources": {
+          "limits": {
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "1Gi"
+          }
+        },
         "scan": {
           "internalUrl": "http://scan-app.sv-1:5012",
           "publicUrl": "https://scan.sv-2.mock.global.canton.network.digitalasset.com"
@@ -1809,7 +1824,12 @@
       "namespace": "sv-1",
       "timeout": 600,
       "values": {
-        "additionalEnvVars": [],
+        "additionalEnvVars": [
+          {
+            "name": "ADDITIONAL_CONFIG_TOPOLOGY_METRICS_EXPORT",
+            "value": "canton.validator-apps.validator_backend.automation.topology-metrics-polling-interval = 5m\n"
+          }
+        ],
         "additionalJvmOptions": "-Dcom.sun.management.jmxremote=true -Dcom.sun.management.jmxremote.port=9010 -Dcom.sun.management.jmxremote.rmi.port=9010 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=127.0.0.1",
         "additionalUsers": [],
         "affinity": {
@@ -1841,6 +1861,7 @@
         },
         "contactPoint": "sv-support@digitalasset.com",
         "disableAllocateLedgerApiUserParty": true,
+        "disableAuth": false,
         "enablePostgresMetrics": true,
         "failOnAppVersionMismatch": true,
         "imageRepo": "us-central1-docker.pkg.dev/da-cn-shared/ghcr/digital-asset/decentralized-canton-sync-dev/docker",
@@ -1876,10 +1897,11 @@
         },
         "resources": {
           "limits": {
-            "memory": "4Gi"
+            "memory": "2Gi"
           },
           "requests": {
-            "memory": "2Gi"
+            "cpu": "1",
+            "memory": "1Gi"
           }
         },
         "scanAddress": "http://scan-app.sv-1:5012",
@@ -2423,6 +2445,15 @@
           "secretName": "cn-apps-pg-secrets",
           "user": "cnadmin"
         },
+        "resources": {
+          "limits": {
+            "memory": "2048Mi"
+          },
+          "requests": {
+            "cpu": "0.5",
+            "memory": "1536Mi"
+          }
+        },
         "sequencerAddress": "global-domain-3-sequencer",
         "spliceInstanceNames": {
           "amuletName": "Amulet",
@@ -2487,7 +2518,7 @@
         "approvedSvIdentities": [
           {
             "name": "Digital-Asset-2",
-            "publicKey": "PUBKEY_0==",
+            "publicKey": "sv1-id-public-key",
             "rewardWeightBps": 100000
           },
           {
@@ -2514,6 +2545,11 @@
             "name": "Digital-Asset-1",
             "publicKey": "svda1-mock-id-public-key",
             "rewardWeightBps": 150000
+          },
+          {
+            "name": "DA-Helm-Test-Node",
+            "publicKey": "sv-id-public-key",
+            "rewardWeightBps": 10000
           }
         ],
         "auth": {
@@ -2586,6 +2622,15 @@
           "secretName": "cn-apps-pg-secrets",
           "user": "cnadmin"
         },
+        "resources": {
+          "limits": {
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "1Gi"
+          }
+        },
         "scan": {
           "internalUrl": "http://scan-app.sv-da-1:5012",
           "publicUrl": "https://scan.sv-1.mock.global.canton.network.digitalasset.com"
@@ -2623,7 +2668,12 @@
       "namespace": "sv-da-1",
       "timeout": 600,
       "values": {
-        "additionalEnvVars": [],
+        "additionalEnvVars": [
+          {
+            "name": "ADDITIONAL_CONFIG_TOPOLOGY_METRICS_EXPORT",
+            "value": "canton.validator-apps.validator_backend.automation.topology-metrics-polling-interval = 5m\n"
+          }
+        ],
         "additionalJvmOptions": "-Dcom.sun.management.jmxremote=true -Dcom.sun.management.jmxremote.port=9010 -Dcom.sun.management.jmxremote.rmi.port=9010 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=127.0.0.1",
         "additionalUsers": [],
         "affinity": {
@@ -2655,6 +2705,7 @@
         },
         "contactPoint": "sv-support@digitalasset.com",
         "disableAllocateLedgerApiUserParty": true,
+        "disableAuth": false,
         "enablePostgresMetrics": true,
         "failOnAppVersionMismatch": true,
         "imageRepo": "us-central1-docker.pkg.dev/da-cn-shared/ghcr/digital-asset/decentralized-canton-sync-dev/docker",
@@ -2690,10 +2741,11 @@
         },
         "resources": {
           "limits": {
-            "memory": "4Gi"
+            "memory": "2Gi"
           },
           "requests": {
-            "memory": "2Gi"
+            "cpu": "1",
+            "memory": "1Gi"
           }
         },
         "scanAddress": "http://scan-app.sv-da-1:5012",

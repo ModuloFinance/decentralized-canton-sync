@@ -774,6 +774,12 @@ components:
           type: string
         created_at:
           type: string
+        synchronizer_was_paused:
+          type: boolean
+        separate_payload_files:
+          type: boolean
+          description: |
+            If set to true, acs_snapshot is a filename
 
     GetValidatorDomainDataSnapshotResponse:
       type: object

@@ -13,6 +13,7 @@ import {
   COMETBFT_RETAIN_BLOCKS,
   commandScriptPath,
   ENABLE_COMETBFT_PRUNING,
+  ExactNamespace,
   GCP_PROJECT,
   GrafanaKeys,
   HELM_MAX_HISTORY_SIZE,
@@ -22,6 +23,7 @@ import {
   SPLICE_ROOT,
 } from '@lfdecentralizedtrust/splice-pulumi-common';
 import { infraAffinityAndTolerations } from '@lfdecentralizedtrust/splice-pulumi-common';
+import { SplicePostgres } from '@lfdecentralizedtrust/splice-pulumi-common/src/postgres';
 import { local } from '@pulumi/command';
 import { getSecretVersionOutput } from '@pulumi/gcp/secretmanager/getSecretVersion';
 import { Input } from '@pulumi/pulumi';
@@ -87,22 +89,28 @@ const prometheusExternalUrl = `https://prometheus.${CLUSTER_HOSTNAME}`;
 const shouldIgnoreNoDataOrDataSourceError = clusterIsResetPeriodically;
 
 export function configureObservability(dependsOn: pulumi.Resource[] = []): pulumi.Resource {
+  const namespaceName = 'observability';
   const namespace = new k8s.core.v1.Namespace(
-    'observabilty',
+    namespaceName,
     {
       metadata: {
-        name: 'observability',
+        name: namespaceName,
         // istio really doesn't play well with prometheus
         // it seems to  modify the scraping calls from prometheus and change labels/include extra time series that make no sense
         labels: { 'istio-injection': 'disabled' },
       },
     },
-    { dependsOn }
+    {
+      dependsOn,
+      aliases: [
+        { name: 'observabilty' }, // Legacy typo
+      ],
+    }
   );
-  const namespaceName = namespace.metadata.name;
   // If the stack version is updated the crd version might need to be upgraded as well, check the release notes https://artifacthub.io/packages/helm/prometheus-community/kube-prometheus-stack
-  const stackVersion = '75.9.0';
-  const prometheusStackCrdVersion = '0.83.0';
+  const stackVersion = '77.12.1';
+  const prometheusStackCrdVersion = '0.85.0';
+  const postgres = installPostgres({ ns: namespace, logicalName: namespaceName });
   const adminPassword = grafanaKeysFromSecret().adminPassword;
   const prometheusStack = new k8s.helm.v3.Release(
     'observability-metrics',
@@ -123,6 +131,12 @@ export function configureObservability(dependsOn: pulumi.Resource[] = []): pulum
         defaultRules: {
           // enable recording rules for all the k8s metrics
           create: true,
+          disabled: {
+            // The timeout is not configurable, and we have currently jobs that are expected to run for more than
+            // the 12 hr timeout, so we disable the alert. There is an alert if the job fails, so the only risk is
+            // a job that never completes.
+            KubeJobNotCompleted: true,
+          },
         },
         kubeControllerManager: {
           enabled: false,
@@ -264,6 +278,7 @@ export function configureObservability(dependsOn: pulumi.Resource[] = []): pulum
         },
         grafana: {
           fullnameOverride: 'grafana',
+          envFromSecret: 'grafana-pg-secret',
           ingress: {
             enabled: false,
           },
@@ -366,6 +381,13 @@ export function configureObservability(dependsOn: pulumi.Resource[] = []): pulum
                   skip_verify: true,
                 }
               : undefined,
+            database: {
+              type: 'postgres',
+              host: pulumi.interpolate`${postgres.address}:5432`,
+              user: 'cnadmin',
+              password: '${postgresPassword}', // replaced from the secret
+              name: 'cantonnet',
+            },
           },
           deploymentStrategy: {
             // required for the pvc
@@ -490,6 +512,7 @@ export function configureObservability(dependsOn: pulumi.Resource[] = []): pulum
         'prometheus-node-exporter': {
           fullnameOverride: 'node-exporter',
         },
+        database: {},
       },
       maxHistory: HELM_MAX_HISTORY_SIZE,
     },
@@ -727,7 +750,32 @@ function createGrafanaAlerting(namespace: Input<string>) {
               '$CONTENTION_THRESHOLD_PERCENTAGE_PER_NAMESPACE',
               monitoringConfig.alerting.alerts.delegatelessContention.thresholdPerNamespace.toString()
             ),
-            'sv-status-report_alerts.yaml': readGrafanaAlertingFile('sv-status-report_alerts.yaml'),
+            'sv-status-report_alerts.yaml': readAndSetAlertRulesGrafanaAlertingFile(
+              'sv-status-report_alerts.yaml',
+              [
+                {
+                  reportPublisherFormula: '=~"Digital-Asset-1|Digital-Asset-2|DA-Helm-Test-Node"',
+                  notificationDelay: '5m',
+                  teamLabel: 'canton-network',
+                  subtitle: 'internal SVs 5m',
+                  uid: 'adlmhpz5iv4sgc',
+                },
+                {
+                  reportPublisherFormula: '=~"Digital-Asset-1|Digital-Asset-2|DA-Helm-Test-Node"',
+                  notificationDelay: '15m',
+                  teamLabel: 'support',
+                  subtitle: 'internal SVs 15m',
+                  uid: 'bdlmhpz5iv4sgc',
+                },
+                {
+                  reportPublisherFormula: '!~"Digital-Asset-1|Digital-Asset-2|DA-Helm-Test-Node"',
+                  notificationDelay: '15m',
+                  teamLabel: 'da',
+                  subtitle: 'external SVs 15m',
+                  uid: 'cdlmhpz5iv4sgc',
+                },
+              ]
+            ),
             ...(enableMiningRoundAlert
               ? {
                   'mining-rounds_alerts.yaml': readGrafanaAlertingFile('mining-rounds_alerts.yaml'),
@@ -741,24 +789,6 @@ function createGrafanaAlerting(namespace: Input<string>) {
             ),
             'extra_k8s_alerts.yaml': readGrafanaAlertingFile('extra_k8s_alerts.yaml'),
             'traffic_alerts.yaml': readGrafanaAlertingFile('traffic_alerts.yaml')
-              .replaceAll(
-                '$WASTED_TRAFFIC_ALERT_THRESHOLD_BYTES',
-                (monitoringConfig.alerting.alerts.trafficWaste.kilobytes * 1024).toString()
-              )
-              .replaceAll(
-                '$WASTED_TRAFFIC_ALERT_QUANTILE',
-                monitoringConfig.alerting.alerts.trafficWaste.quantile.toString()
-              )
-              .replaceAll(
-                '$WASTED_TRAFFIC_ALERT_TIME_RANGE_MINS',
-                monitoringConfig.alerting.alerts.trafficWaste.overMinutes.toString()
-              )
-              .replaceAll(
-                '$WASTED_TRAFFIC_ALERT_EXTRA_MEMBER_FILTER',
-                monitoringConfig.alerting.alerts.svNames
-                  .map(p => `,member!~"PAR::${p}::.*"`)
-                  .join('')
-              )
               .replaceAll(
                 '$CONFIRMATION_REQUESTS_TOTAL_ALERT_TIME_RANGE_MINS',
                 monitoringConfig.alerting.alerts.confirmationRequests.total.overMinutes.toString()
@@ -837,6 +867,70 @@ function readGrafanaAlertingFile(file: string) {
     : fileContent;
 }
 
+type ReportMatchOperator = '=~' | '!~';
+type ReportPublisherList = 'Digital-Asset-1|Digital-Asset-2|DA-Helm-Test-Node';
+type ReportPublisherFormula = `${ReportMatchOperator}"${ReportPublisherList}"`;
+type NotificationDelay = '5m' | '15m';
+type TeamLabel = 'canton-network' | 'support' | 'da';
+type RulesUID = 'adlmhpz5iv4sgc' | 'bdlmhpz5iv4sgc' | 'cdlmhpz5iv4sgc';
+
+interface AlertRulesConfig {
+  reportPublisherFormula: ReportPublisherFormula;
+  notificationDelay: NotificationDelay;
+  teamLabel: TeamLabel;
+  subtitle: string;
+  uid: RulesUID;
+}
+
+interface GrafanaRule {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+interface GrafanaRuleGroup {
+  name: string;
+  rules: GrafanaRule[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+interface GrafanaRuleFile {
+  groups: GrafanaRuleGroup[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+// reads grafana alerting template rule from file, fill it with alert rules custom configurations and append to rules
+function readAndSetAlertRulesGrafanaAlertingFile(file: string, rules: AlertRulesConfig[]) {
+  const fileContent = fs.readFileSync(
+    `${SPLICE_ROOT}/cluster/pulumi/infra/grafana-alerting/${file}`,
+    'utf-8'
+  );
+
+  const content: GrafanaRuleFile = yaml.load(fileContent) as GrafanaRuleFile;
+  if (!content?.groups?.[0]?.rules?.[0]) {
+    throw new Error(`Invalid or empty rule template, Expected 'groups[0].rules[0]' to exist.`);
+  }
+
+  const genericAlertRule = yaml.dump(content.groups[0].rules[0]);
+
+  content.groups[0].rules = rules.map(rule => {
+    const newRuleString = genericAlertRule
+      .replace('$REPORT_PUBLISHER_FORMULA', rule.reportPublisherFormula)
+      .replace('$NOTIFICATION_DELAY', rule.notificationDelay)
+      .replace('$TEAM_LABEL', rule.teamLabel)
+      .replace('$SUB_TITLE', rule.subtitle)
+      .replace('$RULE_UID', rule.uid);
+    return yaml.load(newRuleString) as GrafanaRule;
+  });
+  const newFileContent = yaml.dump(content);
+
+  // Ignore no data or data source error if the cluster is reset periodically
+  return shouldIgnoreNoDataOrDataSourceError
+    ? newFileContent.replace(/(execErrState|noDataState): .+/g, '$1: OK')
+    : newFileContent;
+}
+
 function readAlertingManagerFile(file: string) {
   return fs.readFileSync(`${SPLICE_ROOT}/cluster/pulumi/infra/alert-manager/${file}`, 'utf-8');
 }
@@ -851,4 +945,15 @@ function grafanaKeysFromSecret(): pulumi.Output<GrafanaKeys> {
       adminPassword: String(parsed.adminPassword),
     };
   });
+}
+
+function installPostgres(namespace: ExactNamespace): SplicePostgres {
+  return new SplicePostgres(
+    namespace,
+    'grafana-pg',
+    'grafana-pg',
+    'grafana-pg-secret',
+    { db: { volumeSize: '20Gi' } }, // A tiny pvc should be enough for grafana
+    true // overrideDbSizeFromValues
+  );
 }

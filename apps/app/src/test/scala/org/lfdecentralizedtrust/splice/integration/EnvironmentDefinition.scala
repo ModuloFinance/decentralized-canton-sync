@@ -274,10 +274,19 @@ case class EnvironmentDefinition(
   def withBftSequencers: EnvironmentDefinition =
     addConfigTransformToFront((_, config) => ConfigTransforms.withBftSequencers()(config))
 
+  def withEagerAppActivityMarkerConversion: EnvironmentDefinition =
+    addConfigTransforms((_, conf) =>
+      ConfigTransforms.updateAllSvAppConfigs_(config =>
+        config.copy(
+          delegatelessAutomationFeaturedAppActivityMarkerMaxAge = NonNegativeFiniteDuration.Zero
+        )
+      )(conf)
+    )
+
   def withAmuletPrice(price: BigDecimal): EnvironmentDefinition =
     addConfigTransforms((_, conf) => ConfigTransforms.setAmuletPrice(price)(conf))
 
-  /** For an SV’s sequencer to be safely usable, we need to wait for participantResponseTimeout + mediatorResponseTimeout.
+  /** For an SV’s sequencer to be safely usable, we need to wait for confirmationResponseTimeout + mediatorResponseTimeout.
     * However, in some tests, we do care that an SV can connect to their own sequencer reasonably quickly.
     * To make that work, we lower the delay to a number that is not fully safe but empirically
     * long enough that all in-flight transactions succeed or fail before.
@@ -453,6 +462,7 @@ object EnvironmentDefinition extends CommonAppInstanceReferences {
       .withInitializedNodes()
       .withTrafficTopupsEnabled
       .withInitialPackageVersions
+      .withEagerAppActivityMarkerConversion
   }
 
   def simpleTopology4Svs(testName: String): EnvironmentDefinition = {
@@ -461,6 +471,7 @@ object EnvironmentDefinition extends CommonAppInstanceReferences {
       .withInitializedNodes()
       .withTrafficTopupsEnabled
       .withInitialPackageVersions
+      .withEagerAppActivityMarkerConversion
   }
 
   def simpleTopology1SvWithSimTime(testName: String): EnvironmentDefinition =

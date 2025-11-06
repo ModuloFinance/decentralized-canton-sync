@@ -27,6 +27,7 @@ import org.lfdecentralizedtrust.splice.identities.NodeIdentitiesStore
 import org.lfdecentralizedtrust.splice.migration.{
   DomainDataRestorer,
   DomainMigrationInfo,
+  MigrationTimeInfo,
   ParticipantUsersDataRestorer,
 }
 import org.lfdecentralizedtrust.splice.scan.admin.api.client
@@ -166,18 +167,24 @@ class ValidatorApp(
                 )
                 .asRuntimeException()
             case _ =>
-              logger.info(
-                "Ensuring participant is initialized"
-              )
               val cantonIdentifierConfig =
                 ValidatorCantonIdentifierConfig.resolvedNodeIdentifierConfig(config)
-              ParticipantInitializer.ensureParticipantInitializedWithExpectedId(
+              val participantInitializer = new ParticipantInitializer(
                 cantonIdentifierConfig.participant,
-                participantAdminConnection,
                 config.participantBootstrappingDump,
                 loggerFactory,
                 retryProvider,
+                participantAdminConnection,
               )
+              if (config.svValidator) {
+                logger.info("Waiting for the participant to be initialized by the SV app")
+                participantInitializer.waitForNodeInitialized()
+              } else {
+                logger.info(
+                  "Ensuring participant is initialized"
+                )
+                participantInitializer.ensureInitializedWithExpectedId()
+              }
           }
       }
     }
@@ -257,7 +264,8 @@ class ValidatorApp(
                       SpliceCircuitBreaker(
                         "restore",
                         config.parameters.circuitBreakers.mediumPriority,
-                        logger,
+                        clock,
+                        loggerFactory,
                       )(ac.scheduler, implicitly),
                     )
                     val participantUsersDataRestorer = new ParticipantUsersDataRestorer(
@@ -415,26 +423,27 @@ class ValidatorApp(
         }
     } yield initialSynchronizerTime
 
-  private def readRestoreDump = config.restoreFromMigrationDump.map { path =>
-    if (config.svValidator)
-      throw Status.INVALID_ARGUMENT
-        .withDescription("SV Validator should not be configured with a dump file")
-        .asRuntimeException()
-
-    val migrationDump = BackupDump.readFromPath[DomainMigrationDump](path) match {
-      case Failure(exception) =>
+  private def readRestoreDump: Option[DomainMigrationDump] = config.restoreFromMigrationDump.map {
+    path =>
+      if (config.svValidator)
         throw Status.INVALID_ARGUMENT
-          .withDescription(s"Failed to read migration dump from $path: ${exception.getMessage}")
+          .withDescription("SV Validator should not be configured with a dump file")
           .asRuntimeException()
-      case Success(value) => value
-    }
-    if (migrationDump.migrationId != config.domainMigrationId)
-      throw Status.INVALID_ARGUMENT
-        .withDescription(
-          s"Migration id from the dump ${migrationDump.migrationId} does not match the configured migration id in the validator ${config.domainMigrationId}. Please check if the validator app is configured with the correct migration id"
-        )
-        .asRuntimeException()
-    migrationDump
+
+      val migrationDump = BackupDump.readFromPath[DomainMigrationDump](path) match {
+        case Failure(exception) =>
+          throw Status.INVALID_ARGUMENT
+            .withDescription(s"Failed to read migration dump from $path: ${exception.getMessage}")
+            .asRuntimeException()
+        case Success(value) => value
+      }
+      if (migrationDump.migrationId != config.domainMigrationId)
+        throw Status.INVALID_ARGUMENT
+          .withDescription(
+            s"Migration id from the dump ${migrationDump.migrationId} does not match the configured migration id in the validator ${config.domainMigrationId}. Please check if the validator app is configured with the correct migration id"
+          )
+          .asRuntimeException()
+      migrationDump
   }
 
   private def getAcsSnapshotFromSingleScan(
@@ -714,13 +723,17 @@ class ValidatorApp(
             )
           }
         } else {
-          val acsTimestamp =
-            readRestoreDump.map(dump => CantonTimestamp.assertFromInstant(dump.acsTimestamp))
+          val dump = readRestoreDump
           Future.successful(
             // TODO(DACH-NY/canton-network-node#9731): get migration id from sponsor sv / scan instead of configuring here
             DomainMigrationInfo(
               config.domainMigrationId,
-              acsTimestamp,
+              dump.map(d =>
+                MigrationTimeInfo(
+                  CantonTimestamp.assertFromInstant(d.acsTimestamp),
+                  d.synchronizerWasPaused,
+                )
+              ),
             )
           )
         }
@@ -853,6 +866,7 @@ class ValidatorApp(
         config.maxVettingDelay,
         config.parameters,
         config.latestPackagesOnly,
+        config.parameters.enabledFeatures,
         loggerFactory,
       )
       _ <- MonadUtil.sequentialTraverse_(config.appInstances.toList)({ case (name, instance) =>

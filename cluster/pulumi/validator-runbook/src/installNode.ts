@@ -9,11 +9,9 @@ import {
   CLUSTER_HOSTNAME,
   clusterSmallDisk,
   CnInput,
-  cnsUiSecret,
   config,
   daContactPoint,
   DecentralizedSynchronizerUpgradeConfig,
-  DEFAULT_AUDIENCE,
   activeVersion,
   exactNamespace,
   ExactNamespace,
@@ -32,12 +30,13 @@ import {
   SPLICE_ROOT,
   setupBootstrapping,
   spliceInstanceNames,
-  validatorSecrets,
+  installValidatorSecrets,
   ValidatorTopupConfig,
   InstalledHelmChart,
   ansDomainPrefix,
   failOnAppVersionMismatch,
   networkWideConfig,
+  getValidatorAppApiAudience,
 } from '@lfdecentralizedtrust/splice-pulumi-common';
 import { installLoopback } from '@lfdecentralizedtrust/splice-pulumi-common-sv';
 import { installParticipant } from '@lfdecentralizedtrust/splice-pulumi-common-validator';
@@ -164,6 +163,7 @@ async function installValidator(
     DecentralizedSynchronizerUpgradeConfig.active.id,
     xns,
     auth0Client.getCfg(),
+    false, // We don't currently support non-auth for validator-runbook
     activeVersion,
     postgres,
     {
@@ -181,16 +181,8 @@ async function installValidator(
   if (!validatorNameSpaceAuth0Clients) {
     throw new Error('No validator namespace in auth0 config');
   }
-  const walletUiClientId = validatorNameSpaceAuth0Clients['wallet'];
-  if (!walletUiClientId) {
-    throw new Error('No wallet ui client id in auth0 config');
-  }
 
-  const { appSecret: validatorAppSecret, uiSecret: validatorUISecret } = await validatorSecrets(
-    xns,
-    auth0Client,
-    walletUiClientId
-  );
+  const validatorSecrets = await installValidatorSecrets(xns, auth0Client);
 
   const validatorValuesFromYamlFiles = {
     ...loadYamlFromFile(`${SPLICE_ROOT}/apps/app/src/pack/examples/sv-helm/validator-values.yaml`, {
@@ -245,6 +237,8 @@ async function installValidator(
     enablePostgresMetrics: true,
     ...spliceInstanceNames,
     maxVettingDelay: networkWideConfig?.maxVettingDelay,
+    additionalEnvVars: validatorConfig.validatorApp?.additionalEnvVars,
+    additionalJvmOptions: validatorConfig.validatorApp?.additionalJvmOptions,
   };
 
   const validatorValuesWithOnboardingOverride = onboardingSecret
@@ -260,7 +254,7 @@ async function installValidator(
     ...validatorValuesWithOnboardingOverride,
     auth: {
       ...validatorValuesWithOnboardingOverride.auth,
-      audience: auth0Client.getCfg().appToApiAudience['validator'] || DEFAULT_AUDIENCE,
+      audience: getValidatorAppApiAudience(auth0Client.getCfg()),
     },
   };
 
@@ -280,8 +274,7 @@ async function installValidator(
   }
   const dependsOn = imagePullDeps
     .concat(loopback ? loopback : [])
-    .concat([validatorAppSecret, validatorUISecret])
-    .concat([cnsUiSecret(xns, auth0Client, cnsUiClientId)])
+    .concat(validatorSecrets)
     .concat(backupConfigSecret ? [backupConfigSecret] : [])
     .concat(
       onboardingSecret ? [installValidatorOnboardingSecret(xns, 'validator', onboardingSecret)] : []
@@ -297,7 +290,7 @@ async function installValidator(
     { dependsOn: dependsOn }
   );
   if (validatorConfig?.partyAllocator.enable) {
-    installPartyAllocator(xns, [validatorChart]);
+    installPartyAllocator(xns, validatorConfig.partyAllocator, [validatorChart]);
   }
   return validatorChart;
 }

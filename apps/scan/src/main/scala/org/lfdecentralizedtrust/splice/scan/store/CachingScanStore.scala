@@ -34,6 +34,7 @@ import org.lfdecentralizedtrust.splice.scan.config.{CacheConfig, ScanCacheConfig
 import org.lfdecentralizedtrust.splice.scan.store.db.{DbScanStoreMetrics, ScanAggregator}
 import org.lfdecentralizedtrust.splice.store.{
   Limit,
+  MiningRoundsStore,
   MultiDomainAcsStore,
   PageLimit,
   SortOrder,
@@ -70,7 +71,7 @@ class CachingScanStore(
   // TODO(#800) remove when amulet expiry works again
   override def getTotalAmuletBalance(
       asOfEndOfRound: Long
-  )(implicit tc: TraceContext): Future[BigDecimal] = {
+  )(implicit tc: TraceContext): Future[Option[BigDecimal]] = {
     getCache(
       "totalAmuletBalance",
       cacheConfig.totalAmuletBalance,
@@ -365,6 +366,16 @@ class CachingScanStore(
       cacheConfig.svNodeState,
       store.lookupSvNodeState,
     ).get(svPartyId)
+
+  override def lookupOpenMiningRoundTriple()(implicit
+      ec: ExecutionContext,
+      tc: TraceContext,
+  ): Future[Option[MiningRoundsStore.OpenMiningRoundTriple]] =
+    getCache(
+      "openMiningRounds",
+      cacheConfig.openMiningRounds,
+      (_: Unit) => store.lookupOpenMiningRoundTriple(),
+    ).get(())
 
   override def domains: SynchronizerStore = store.domains
 

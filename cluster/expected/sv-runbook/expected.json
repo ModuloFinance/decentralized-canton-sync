@@ -172,14 +172,6 @@
   },
   {
     "custom": true,
-    "id": "projects/test-project/global/networks/default",
-    "inputs": {},
-    "name": "default",
-    "provider": "",
-    "type": "gcp:compute/network:Network"
-  },
-  {
-    "custom": true,
     "id": "",
     "inputs": {
       "enableServerSideApply": "true"
@@ -489,6 +481,15 @@
           "postgresName": "apps-pg",
           "secretName": "apps-pg-secret"
         },
+        "resources": {
+          "limits": {
+            "memory": "2048Mi"
+          },
+          "requests": {
+            "cpu": "0.5",
+            "memory": "1536Mi"
+          }
+        },
         "sequencerAddress": "global-domain-3-sequencer",
         "spliceInstanceNames": {
           "amuletName": "Amulet",
@@ -755,7 +756,7 @@
         "approvedSvIdentities": [
           {
             "name": "Digital-Asset-2",
-            "publicKey": "PUBKEY_0==",
+            "publicKey": "sv1-id-public-key",
             "rewardWeightBps": 100000
           },
           {
@@ -780,8 +781,13 @@
           },
           {
             "name": "Digital-Asset-1",
-            "publicKey": "THIS_IS_THE_WRONG_KEY",
+            "publicKey": "svda1-mock-id-public-key",
             "rewardWeightBps": 150000
+          },
+          {
+            "name": "DA-Helm-Test-Node",
+            "publicKey": "sv-id-public-key",
+            "rewardWeightBps": 10000
           }
         ],
         "auth": {
@@ -836,6 +842,15 @@
           "host": "apps-pg.sv.svc.cluster.local",
           "postgresName": "apps-pg",
           "secretName": "apps-pg-secret"
+        },
+        "resources": {
+          "limits": {
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "1Gi"
+          }
         },
         "scan": {
           "internalUrl": "http://scan-app.sv:5012",
@@ -1090,6 +1105,10 @@
           {
             "name": "ADDITIONAL_CONFIG_NO_BFT_SEQUENCER_CONNECTION",
             "value": "canton.validator-apps.validator_backend.disable-sv-validator-bft-sequencer-connection = true"
+          },
+          {
+            "name": "ADDITIONAL_CONFIG_TOPOLOGY_METRICS_EXPORT",
+            "value": "canton.validator-apps.validator_backend.automation.topology-metrics-polling-interval = 5m\n"
           }
         ],
         "additionalJvmOptions": "-Dcom.sun.management.jmxremote=true -Dcom.sun.management.jmxremote.port=9010 -Dcom.sun.management.jmxremote.rmi.port=9010 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=127.0.0.1",
@@ -1143,6 +1162,15 @@
           "host": "apps-pg.sv.svc.cluster.local",
           "postgresName": "apps-pg",
           "secretName": "apps-pg-secret"
+        },
+        "resources": {
+          "limits": {
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "1Gi"
+          }
         },
         "scanAddress": "http://scan-app.sv:5012",
         "spliceInstanceNames": {

@@ -17,12 +17,12 @@ import com.digitalasset.canton.grpc.ByteStringStreamObserver
 import com.digitalasset.canton.logging.NamedLoggerFactory
 import com.digitalasset.canton.logging.pretty.{Pretty, PrettyPrinting}
 import com.digitalasset.canton.protocol.StaticSynchronizerParameters
-import com.digitalasset.canton.sequencer.admin.v30.OnboardingStateResponse
+import com.digitalasset.canton.sequencer.admin.v30.OnboardingStateV2Response
 import com.digitalasset.canton.sequencing.protocol
 import com.digitalasset.canton.synchronizer.sequencer.SequencerPruningStatus
 import com.digitalasset.canton.synchronizer.sequencer.admin.grpc.InitializeSequencerResponse
 import com.digitalasset.canton.time.Clock
-import com.digitalasset.canton.topology.admin.v30.GenesisStateResponse
+import com.digitalasset.canton.topology.admin.v30.GenesisStateV2Response
 import com.digitalasset.canton.topology.store.StoredTopologyTransactions.GenericStoredTopologyTransactions
 import com.digitalasset.canton.topology.transaction.SequencerSynchronizerState
 import com.digitalasset.canton.topology.{Member, NodeIdentity, SequencerId}
@@ -69,25 +69,25 @@ class SequencerAdminConnection(
 
   def getGenesisState(timestamp: CantonTimestamp)(implicit
       traceContext: TraceContext
-  ): Future[ByteString] = {
-    val responseObserver = new ByteStringStreamObserver[GenesisStateResponse](_.chunk)
+  ): Future[Seq[ByteString]] = {
+    val responseObserver = new SeqAccumulatingObserver[GenesisStateV2Response]()
     runCmd(
       TopologyAdminCommands.Read
-        .GenesisState(
+        .GenesisStateV2(
           timestamp = Some(timestamp),
           synchronizerStore = None,
           observer = responseObserver,
         )
-    ).flatMap(_ => responseObserver.resultBytes)
+    ).flatMap(_ => responseObserver.resultFuture.map(_.map(_.chunk)))
   }
 
   def getOnboardingState(sequencerId: SequencerId)(implicit
       traceContext: TraceContext
   ): Future[ByteString] = {
     val responseObserver =
-      new ByteStringStreamObserver[OnboardingStateResponse](_.onboardingStateForSequencer)
+      new ByteStringStreamObserver[OnboardingStateV2Response](_.onboardingStateForSequencer)
     runCmd(
-      SequencerAdminCommands.OnboardingState(responseObserver, Left(sequencerId))
+      SequencerAdminCommands.OnboardingStateV2(responseObserver, Left(sequencerId))
     ).flatMap(_ => responseObserver.resultBytes)
   }
 
@@ -96,23 +96,25 @@ class SequencerAdminConnection(
   def initializeFromBeginning(
       topologySnapshot: GenericStoredTopologyTransactions,
       domainParameters: StaticSynchronizerParameters,
-  )(implicit traceContext: TraceContext): Future[InitializeSequencerResponse] =
+  )(implicit traceContext: TraceContext): Future[InitializeSequencerResponse] = {
+    val builder = ByteString.newOutput()
+    topologySnapshot.result.foreach(_.writeDelimitedTo(domainParameters.protocolVersion, builder))
     runCmd(
-      SequencerAdminCommands.InitializeFromGenesisState(
-        // TODO(DACH-NY/canton-network-node#10953) Stop doing that.
-        topologySnapshot.toByteString(domainParameters.protocolVersion),
+      SequencerAdminCommands.InitializeFromGenesisStateV2(
+        Seq(builder.toByteString),
         domainParameters,
       )
     )
+  }
 
   /** This is used for initializing the sequencer after hard domain migrations.
     */
   def initializeFromGenesisState(
-      genesisState: ByteString,
+      genesisState: Seq[ByteString],
       domainParameters: StaticSynchronizerParameters,
   )(implicit traceContext: TraceContext): Future[InitializeSequencerResponse] =
     runCmd(
-      SequencerAdminCommands.InitializeFromGenesisState(
+      SequencerAdminCommands.InitializeFromGenesisStateV2(
         genesisState,
         domainParameters,
       )
@@ -122,7 +124,7 @@ class SequencerAdminConnection(
       onboardingState: ByteString
   )(implicit traceContext: TraceContext): Future[InitializeSequencerResponse] =
     runCmd(
-      SequencerAdminCommands.InitializeFromOnboardingState(
+      SequencerAdminCommands.InitializeFromOnboardingStateV2(
         onboardingState
       )
     )

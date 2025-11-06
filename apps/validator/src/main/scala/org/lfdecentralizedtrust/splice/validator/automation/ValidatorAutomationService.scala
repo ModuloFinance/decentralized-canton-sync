@@ -10,6 +10,7 @@ import org.lfdecentralizedtrust.splice.automation.{
 }
 import org.lfdecentralizedtrust.splice.config.{
   AutomationConfig,
+  EnabledFeaturesConfig,
   PeriodicBackupDumpConfig,
   SpliceParametersConfig,
 }
@@ -77,6 +78,7 @@ class ValidatorAutomationService(
     maxVettingDelay: NonNegativeFiniteDuration,
     params: SpliceParametersConfig,
     latestPackagesOnly: Boolean,
+    enabledFeatures: EnabledFeaturesConfig,
     override protected val loggerFactory: NamedLoggerFactory,
 )(implicit
     ec: ExecutionContextExecutor,
@@ -97,6 +99,18 @@ class ValidatorAutomationService(
   override def companion
       : org.lfdecentralizedtrust.splice.validator.automation.ValidatorAutomationService.type =
     ValidatorAutomationService
+
+  automationConfig.topologyMetricsPollingInterval.foreach(topologyPollingInterval =>
+    registerTrigger(
+      new TopologyMetricsTrigger(
+        triggerContext
+          .focus(_.config.pollingInterval)
+          .replace(topologyPollingInterval),
+        scanConnection,
+        participantAdminConnection,
+      )
+    )
+  )
 
   walletManagerOpt.foreach { walletManager =>
     registerTrigger(
@@ -258,6 +272,7 @@ class ValidatorAutomationService(
           participantAdminConnection,
           path,
           scanConnection,
+          enabledFeatures,
         )
       )
     }

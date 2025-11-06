@@ -91,7 +91,7 @@ object HttpSvAdminAppClient {
     }
   }
 
-  case class PrepareValidatorOnboarding(expiresIn: FiniteDuration)
+  case class PrepareValidatorOnboarding(expiresIn: FiniteDuration, partyHint: Option[String])
       extends BaseCommand[http.PrepareValidatorOnboardingResponse, String] {
 
     override def submitRequest(
@@ -99,7 +99,7 @@ object HttpSvAdminAppClient {
         headers: List[HttpHeader],
     ): EitherT[Future, Either[Throwable, HttpResponse], http.PrepareValidatorOnboardingResponse] =
       client.prepareValidatorOnboarding(
-        body = definitions.PrepareValidatorOnboardingRequest(expiresIn.toSeconds),
+        body = definitions.PrepareValidatorOnboardingRequest(expiresIn.toSeconds, partyHint),
         headers = headers,
       )
 
@@ -456,7 +456,7 @@ object HttpSvAdminAppClient {
     }
   }
 
-  case class TriggerDomainMigrationDump(migrationId: Long)
+  case class TriggerDomainMigrationDump(migrationId: Long, at: Option[Instant])
       extends BaseCommand[
         http.TriggerDomainMigrationDumpResponse,
         Unit,
@@ -471,7 +471,7 @@ object HttpSvAdminAppClient {
     ], TriggerDomainMigrationDumpResponse] =
       client.triggerDomainMigrationDump(
         headers = headers,
-        body = TriggerDomainMigrationDumpRequest(migrationId),
+        body = TriggerDomainMigrationDumpRequest(migrationId, at.map(_.toString)),
       )
 
     override def handleOk()(implicit

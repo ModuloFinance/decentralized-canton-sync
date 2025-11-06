@@ -325,6 +325,15 @@ case class SvAppBackendConfig(
       NonNegativeFiniteDuration.ofMillis(250),
     delegatelessAutomationExpectedTaskDuration: Long = 5000, // milliseconds
     delegatelessAutomationExpiredRewardCouponBatchSize: Int = 20,
+    // What batch size to target for converting app activity markers
+    delegatelessAutomationFeaturedAppActivityMarkerBatchSize: Int = 100,
+    // how long to wait before forcing a conversion even though the batch size is not full
+    delegatelessAutomationFeaturedAppActivityMarkerMaxAge: NonNegativeFiniteDuration =
+      NonNegativeFiniteDuration.ofSeconds(30),
+    // at what number of markers should the app switch into catchup mode where
+    // every SV tries to convert markers from any other SV's book of work (in a contention avoiding fashion)
+    delegatelessAutomationFeaturedAppActivityMarkerCatchupThreshold: Int = 10_000,
+    delegatelessAutomationExpiredAmuletBatchSize: Int = 100,
     bftSequencerConnection: Boolean = true,
     // Skip synchronizer initialization and synchronizer config reconciliation.
     // Can be safely set to true for an SV that has completed onboarding unless you
@@ -336,7 +345,9 @@ case class SvAppBackendConfig(
     // distributed between 0 and the maximum delay) to ensure that not
     // all validators submit the transaction at the same time
     // overloading the network.
-    maxVettingDelay: NonNegativeFiniteDuration = NonNegativeFiniteDuration.ofHours(1),
+    // 24h is chosen to be long enough to avoid a load spike (it's ~86k seconds so assuming it's 1 topology transaction/s on average for 86k validators)
+    // but short enough to allow for node downtime and other issues.
+    maxVettingDelay: NonNegativeFiniteDuration = NonNegativeFiniteDuration.ofHours(24),
     // `latestPackagesOnly=true` is intended for LocalNet testing only and is not supported in production
     latestPackagesOnly: Boolean = false,
     followAmuletConversionRateFeed: Option[AmuletConversionRateFeedConfig] = None,
@@ -402,7 +413,7 @@ final case class SvSequencerConfig(
     adminApi: FullClientConfig,
     internalApi: FullClientConfig,
     externalPublicApiUrl: String,
-    // This needs to be participantResponseTimeout + mediatorResponseTimeout to make sure that the sequencer
+    // This needs to be confirmationResponseTimeout + mediatorResponseTimeout to make sure that the sequencer
     // does not have to serve requests that have been in flight before the sequencer's signing keys became valid.
     // See also https://github.com/DACH-NY/canton-network-node/issues/5938#issuecomment-1677165109
     // The default value of 60 seconds is based on Canton defaulting to 30s for each of those.

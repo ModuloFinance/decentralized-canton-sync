@@ -27,6 +27,10 @@ spec:
         migration: {{ .Values.migration.id | quote }}
     spec:
       {{- include "splice-util-lib.service-account" .Values | nindent 6 }}
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
       containers:
         - name: sv-app
           image: "{{ .Values.imageRepo }}/sv-app:{{ .Chart.AppVersion }}{{ ((.Values.imageDigests).sv_app) }}"

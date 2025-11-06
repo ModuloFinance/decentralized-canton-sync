@@ -4,7 +4,11 @@
 package org.lfdecentralizedtrust.splice.sv.onboarding.domainmigration
 
 import cats.syntax.either.*
-import org.lfdecentralizedtrust.splice.config.{SpliceInstanceNamesConfig, UpgradesConfig}
+import org.lfdecentralizedtrust.splice.config.{
+  EnabledFeaturesConfig,
+  SpliceInstanceNamesConfig,
+  UpgradesConfig,
+}
 import org.lfdecentralizedtrust.splice.environment.{
   BaseLedgerConnection,
   MediatorAdminConnection,
@@ -21,6 +25,7 @@ import org.lfdecentralizedtrust.splice.identities.NodeIdentitiesDump
 import org.lfdecentralizedtrust.splice.migration.{
   DomainDataRestorer,
   DomainMigrationInfo,
+  MigrationTimeInfo,
   ParticipantUsersDataRestorer,
 }
 import org.lfdecentralizedtrust.splice.store.{
@@ -93,6 +98,7 @@ class DomainMigrationInitializer(
         Option[SvOnboardingConfig.JoinWithKey],
         Option[CometBftNode],
     ) => JoiningNodeInitializer,
+    enabledFeatures: EnabledFeaturesConfig,
 )(implicit
     ec: ExecutionContextExecutor,
     httpClient: HttpClient,
@@ -165,8 +171,11 @@ class DomainMigrationInitializer(
       migrationInfo =
         DomainMigrationInfo(
           currentMigrationId = config.domainMigrationId,
-          acsRecordTime = Some(
-            CantonTimestamp.assertFromInstant(migrationDump.domainDataSnapshot.acsTimestamp)
+          migrationTimeInfo = Some(
+            MigrationTimeInfo(
+              CantonTimestamp.assertFromInstant(migrationDump.domainDataSnapshot.acsTimestamp),
+              synchronizerWasPaused = migrationDump.domainDataSnapshot.synchronizerWasPaused,
+            )
           ),
         )
       svStore = newSvStore(storeKey, migrationInfo, participantId)
@@ -220,6 +229,7 @@ class DomainMigrationInitializer(
           spliceInstanceNamesConfig,
           loggerFactory,
           packageVersionSupport,
+          enabledFeatures,
         )
       // We register the traffic triggers earlier for domain migrations to ensure that SV nodes obtain
       // unlimited traffic and prevent lock-out issues due to lack of traffic (see #13868)
@@ -288,7 +298,7 @@ class DomainMigrationInitializer(
 
   private def initializeSynchronizerNode(
       nodeIdentities: SynchronizerNodeIdentities,
-      genesisState: ByteString,
+      genesisState: Seq[ByteString],
   ): Future[Unit] = {
     val synchronizerNodeInitiaizer = SynchronizerNodeInitializer(
       localSynchronizerNode,
@@ -337,7 +347,7 @@ class DomainMigrationInitializer(
   private def initializeSequencer(
       synchronizerNodeInitializer: SynchronizerNodeInitializer,
       identity: NodeIdentitiesDump,
-      genesisState: ByteString,
+      genesisState: Seq[ByteString],
   ) = {
     synchronizerNodeInitializer.synchronizerNode.sequencerAdminConnection
       .isNodeInitialized()

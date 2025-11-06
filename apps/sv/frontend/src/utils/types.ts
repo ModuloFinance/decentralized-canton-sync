@@ -97,7 +97,7 @@ export type ProposalDetails = {
 export interface ProposalVotingInformation {
   requester: string;
   requesterIsYou?: boolean;
-  votingCloses: string;
+  votingThresholdDeadline: string;
   voteTakesEffect: string;
   status: ProposalListingStatus;
 }
@@ -124,7 +124,7 @@ export type ProposalListingStatus =
 export interface ProposalListingData {
   contractId: ContractId<VoteRequest>;
   actionName: string;
-  votingCloses: string;
+  votingThresholdDeadline: string;
   voteTakesEffect: string;
   yourVote: YourVoteStatus;
   status: ProposalListingStatus;

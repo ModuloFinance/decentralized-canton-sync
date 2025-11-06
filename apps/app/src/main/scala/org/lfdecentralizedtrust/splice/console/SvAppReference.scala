@@ -134,9 +134,12 @@ abstract class SvAppReference(
     }
 
   @Help.Summary("Dump all the required data for domain migration to the configured location")
-  def triggerDecentralizedSynchronizerMigrationDump(migrationId: Long): Unit =
+  def triggerDecentralizedSynchronizerMigrationDump(
+      migrationId: Long,
+      at: Option[Instant] = None,
+  ): Unit =
     consoleEnvironment.run {
-      httpCommand(HttpSvAdminAppClient.TriggerDomainMigrationDump(migrationId))
+      httpCommand(HttpSvAdminAppClient.TriggerDomainMigrationDump(migrationId, at))
     }
 
   @Help.Summary("Get a snapshot of all the dynamic data from the domain")
@@ -343,10 +346,10 @@ class SvAppBackendReference(
     }
 
   @Help.Summary("Prepare a validator onboarding and return an onboarding secret (via admin API)")
-  def prepareValidatorOnboarding(expiresIn: FiniteDuration): String =
+  def prepareValidatorOnboarding(expiresIn: FiniteDuration, partyHint: Option[String]): String =
     consoleEnvironment.run {
       httpCommand(
-        HttpSvAdminAppClient.PrepareValidatorOnboarding(expiresIn)
+        HttpSvAdminAppClient.PrepareValidatorOnboarding(expiresIn, partyHint)
       )
     }
 
